@@ -85,10 +85,12 @@ calc_mean_noise=False
 #---------------------------------------------------------------------------------------------------
 
 if XH=='NH':
-    NorthSouth='north'
+    #NorthSouth='north'
+    xh='nh'
 elif XH=='SH':
-    NorthSouth='south'
-
+    #NorthSouth='south'
+    xh='sh'
+    
 if data=='CCI':
     paths=['/media/dusch/T7 Shield/SIC/SIC/{:}{:02.0f}/'.format(XH, dx)]
     filterhandle='ESACCI-SEAICE-L4-SICONC-AMSR_{:02.1f}kmEASE2-{:}-'.format(dx, XH)
@@ -102,8 +104,9 @@ elif data=='noise':
             paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{}/osi_sep_full/batch001i{:03d}/'.format(XH,i))
 
 
-    filterhandle='_lx{:.0f}km_lt{:.0f}d_ice_conc_cdr-v3p0_{:02.1f}km_ease2-{}-'.format(lcor_sp_km, lcor_temp, dx, NorthSouth)
-    #filterhandle='_lx{:.0f}km_lt{:.0f}dv2_ESACCI-SEAICE-L4-SICONC-AMSR_{:02.1f}kmEASE2-{:}-'.format(lcor_sp_km, lcor_temp, dx, XH)
+    #filterhandle='_lx{:.0f}km_lt{:.0f}d_ice_conc_cdr-v3p0_{:02.1f}km_ease2-{}-'.format(lcor_sp_km, lcor_temp, dx, NorthSouth)
+    filterhandle='_lx{:.0f}km_lt{:.0f}d_ice_conc_{}_ease2-{:02.0f}0_cdr-v3p0_'.format(lcor_sp_km, lcor_temp, xh, dx)
+    
 elif data=='CCI_filt':
     paths=['/media/dusch/T7 Shield/SIC/noise/daily/{:}/2015/filtered/000/'.format(XH)]
     filterhandle='LPfiltered_filtered_lx{:.0f}km_lt{:.0f}dv2_ESACCI-SEAICE-L4-SICONC-AMSR_{:02.1f}kmEASE2-{:}-'.format(lcor_sp_km, lcor_temp, dx, XH)
