@@ -403,6 +403,10 @@ def save_daily(daily_savedir, data, batch_number, i, l_scales, dx, hem, data_ver
         SICs_date=data['dates']
     else: raise ValueError('Please provide the dates in datetime.datetime format')
 
+    if hem=='north':
+        xh = 'nh'
+    if hem=='south':
+        xh='sh'
 
     timeps=pd.Series({}, index=SICs_date, name='time')
     years=np.unique(timeps.index.year)
@@ -445,7 +449,8 @@ def save_daily(daily_savedir, data, batch_number, i, l_scales, dx, hem, data_ver
                     else:
                         print('WARNING: No data for {:04d}-{:02d}-{:02d}'.format(dt_opjekt.year, dt_opjekt.month, dt_opjekt.day))#warnings.warn
                 else:
-                    fn='NOISE_{}_lx{:.0f}km_lt{:.0f}d_ice_conc_cdr-{}_{:02.1f}km_ease2-{}-{:04d}{:02d}{:02d}.nc'.format(id_noise, l_scales[1]*dx, l_scales[0], data_version, dx, hem, year, month, day)
+                    fn='NOISE_{}_lx{:.0f}km_lt{:.0f}d_ice_conc_{}_ease2-{:02.0f}0_cdr-{}_{:04d}{:02d}{:02d}1200.nc'.format(id_noise, l_scales[1]*dx, l_scales[0], xh, dx, data_version, year, month, day)
+                    #fn='NOISE_{}_lx{:.0f}km_lt{:.0f}d_ice_conc_cdr-{}_{:02.1f}km_ease2-{}-{:04d}{:02d}{:02d}.nc'.format(id_noise, l_scales[1]*dx, l_scales[0], data_version, dx, hem, year, month, day)
                     print(fn)
                     ncds = nc.Dataset(savedir_tmp+fn, 'w', format='NETCDF4')
                     ncds.description = 'Noisy realisation of OSI SAF SIC data version {} with {:02.1f}km nominal resolution, {} hemisphere -{:04d}{:02d}{:02d}-fv2.1.nc file, accessable from https://climate.esa.int/en/odp/#/project/sea-ice'.format(data_version, dx, hem, year, month, day)
