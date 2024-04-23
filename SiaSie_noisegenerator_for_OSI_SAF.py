@@ -492,7 +492,7 @@ def save_daily(daily_savedir, data, batch_number, i, l_scales, dx, hem, data_ver
                         sic_var[:,:,:] = data['sic_with_err'].filled(fill_value=-32767.)[i_time[0],:,:].reshape([1,dimx,dimy])[:,:,:]
 
                     if 'stat' in variables:
-                        status_var = ncds.createVariable('status_flag', 'f8', ('time','x','y',), fill_value=-32767)
+                        status_var = ncds.createVariable('status_flag', 'u1', ('time','x','y',))
                         status_var.setncatts({'long_name':u"status flag bit array for sea ice concentration retrievals"})
                         status_var.setncatts({'standard_name':u"sea_ice_area_fraction status_flag"})
                         status_var.setncatts({'flag_masks': u"[  1   2   4   8  16  32  64 128]"})
