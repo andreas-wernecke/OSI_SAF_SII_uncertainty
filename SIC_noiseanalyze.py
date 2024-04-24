@@ -278,6 +278,8 @@ for nc_dir in paths:#loop over n Samples if NOISE
                     ds.close()
 
                     SICs.append(SIC[0,:,:])
+                    if not np.issubdtype(status_tmp.dtype, np.integer):
+                        status_tmp=np.asarray(status_tmp, dtype=int)
                     status.append(status_tmp[0,:,:])
                     if data=='CCI' and comp_cci_ens:total_err[total_err.mask]=0.
                     if data=='CCI' and comp_cci_ens:SIC_sigts.append(total_err[0,:,:])
