@@ -11,50 +11,21 @@ Created on Thu May  5 14:55:12 2022
 import netCDF4 as nc
 import numpy as np
 #import pandas as pd
-from scipy import ndimage, stats, odr
+from scipy import stats, odr
 #import skgstat as skg
 #from scipy.interpolate import griddata
 #from scipy.signal import detrend
 import pandas as pd
 pd.options.mode.use_inf_as_na = True
 #import xarray as xr
-import pywt
 
-import os, sys, calendar, csv#, glob#, datetime
-from os import path
-home=os.getenv('HOME')
-#import matplotlib.dates as dates
-#import random
+import os, calendar, csv#, glob#, datetime
+#from os import path
 
-genpath=home+'/Dropbox/scripts/'
-sys.path.append(genpath)
-
-#import taylorDiagram
-#import rasterio, rasterio.mask#, fiona
-#import GPy
-#import mpl_toolkits
-#from mpl_toolkits.basemap import Basemap
-import cartopy.crs as ccrs                   # import projections
-import cartopy.feature as cf                 # import features
-import scipy.signal, geopandas, shapely, shapely.vectorized, warnings
-from scipy.interpolate import interpn
+import geopandas, shapely, shapely.vectorized, warnings
 import matplotlib.pyplot as plt
 
 from datetime import date, timedelta, datetime
-#from scipy.fftpack import rfft, irfft, fftfreq
-#def gausslow(sig, size=np.array([101,101, 11]), mu='none'):
-#    sigsp=10.
-#    sigtmp=2.
-#    mu='none'
-#    size=np.array([101,101,11])
-#    if mu=='none':
-#        mu=(size-1)/2
-#    u, v, w = np.meshgrid(np.arange(size[0]), np.arange(size[1]), np.arange(size[2]))
-#    #gausslow=np.exp(-((u-mu[0])**2+(v-mu[1])**2)/(2.*sig))*
-def iplot(data):
-    plt.figure()
-    plt.imshow(data)
-    plt.colorbar()
 
 
 #---------------------------------------------------------------------------------------------------
@@ -64,49 +35,60 @@ def iplot(data):
 lcor_temp = 5.
 lcor_sp_km =288.
 dx=25.#in km, 50km nominal, corrected for typical arctic ocean (instead of NP)
-XH='NH'
+XH='SH'
 comp_cci_ens=False
 #data='CCI'
 #data='CCI_filt'
 data='noise'
+
 n_noise=20
+n_batch=4
+
+sampledirs=True
+
 full_year=False
 
 regional=False
+
+sic_owf_zero=False
 
 if full_year:
     years=[2015]
     months=np.arange(1,13)#13
 else:
     years=np.arange(1979, 2024)
-    months=[9]
+    months=[2]
 
 calc_mean_noise=False
 #---------------------------------------------------------------------------------------------------
 
 if XH=='NH':
-    #NorthSouth='north'
+    NorthSouth='north'
     xh='nh'
 elif XH=='SH':
-    #NorthSouth='south'
+    NorthSouth='south'
     xh='sh'
-    
+
 if data=='CCI':
     paths=['/media/dusch/T7 Shield/SIC/SIC/{:}{:02.0f}/'.format(XH, dx)]
     filterhandle='ESACCI-SEAICE-L4-SICONC-AMSR_{:02.1f}kmEASE2-{:}-'.format(dx, XH)
 elif data=='noise':
-    paths=[]
-    for i in range(n_noise):
-        if full_year:
-            paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{:}/2015/gauss/{:03d}/'.format(XH,i))
-        else:
-            #paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{:}/september/gauss/{:03d}/'.format(XH,i))
-            paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{}/osi_sep_full/batch001i{:03d}/'.format(XH,i))
+    paths=['/media/dusch/T7 Shield/SIC/noise/daily/{}/osi_sep_full/'.format(XH)]
+    #this is now done in the reading loop
+    #else:
+    #    for i in range(n_noise):
+    #        if full_year:
+    #            #paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{:}/2015/gauss/{:03d}/'.format(XH,i))
+    #            paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{}/osi_sep_full/batch001i{:03d}/'.format(XH,i))
+    #
+    #         else:
+    #            #paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{:}/september/gauss/{:03d}/'.format(XH,i))
+    #            paths.append('/media/dusch/T7 Shield/SIC/noise/daily/{}/osi_sep_full/batch001i{:03d}/'.format(XH,i))
 
 
-    #filterhandle='_lx{:.0f}km_lt{:.0f}d_ice_conc_cdr-v3p0_{:02.1f}km_ease2-{}-'.format(lcor_sp_km, lcor_temp, dx, NorthSouth)
     filterhandle='_lx{:.0f}km_lt{:.0f}d_ice_conc_{}_ease2-{:02.0f}0_cdr-v3p0_'.format(lcor_sp_km, lcor_temp, xh, dx)
-    
+    #filterhandle='_lx{:.0f}km_lt{:.0f}d_ice_conc_cdr-v3p0_{:02.1f}km_ease2-{}-'.format(lcor_sp_km, lcor_temp, dx, NorthSouth)
+    ##filterhandle='_lx{:.0f}km_lt{:.0f}dv2_ESACCI-SEAICE-L4-SICONC-AMSR_{:02.1f}kmEASE2-{:}-'.format(lcor_sp_km, lcor_temp, dx, XH)
 elif data=='CCI_filt':
     paths=['/media/dusch/T7 Shield/SIC/noise/daily/{:}/2015/filtered/000/'.format(XH)]
     filterhandle='LPfiltered_filtered_lx{:.0f}km_lt{:.0f}dv2_ESACCI-SEAICE-L4-SICONC-AMSR_{:02.1f}kmEASE2-{:}-'.format(lcor_sp_km, lcor_temp, dx, XH)
@@ -223,231 +205,250 @@ if regional:
         meanNoise15reg[str(sea_id)]=[]
         meanNoise15reg_filt[str(sea_id)]=[]
 
-for nc_dir in paths:#loop over n Samples if NOISE
-    print('Folder: '+nc_dir)
 
-    #read data
+if data!='noise':
+    n_noise=1
+    n_batch=1
 
-    SICs=[]
-    if data=='CCI' and comp_cci_ens: SIC_sigts=[]
-    SICs_date=[]
-    status=[]
-    SIC_noises=[]
-
-    for year in years:
-        print(year)
-        for month in months:#
-            fns=os.listdir(nc_dir+'{:04d}/{:02d}/'.format(year,month))
-            dim=calendar.monthrange(year, month)[1]
-            for dom in range(1,dim+1):
-
-                datestr='{:02d}{:02d}'.format(month, dom)
-                #print(datestr)
-                fn=list(filter(lambda x : filterhandle+'{:}{:}'.format(year,datestr) in x, fns))#list with up to one finename in it
-                #SICs=[]
-                #SICs_year=[]
-                #d_SICs=[]
-                #smd_SICs=[]
-                #ald_SICs=[]
-
-
-                    #print(nc_dir+'{:04d}/{:02d}/'.format(year,month)+fileex+str(year)+datestr+'-fv2.1.nc')
-
-                if len(fn)==1:
-
-                    ds=nc.Dataset(nc_dir+'{:04d}/{:02d}/'.format(year,month)+fn[0], "r")
-                    #print(ds.variables)
-                    if data=='CCI':#original
-                        SIC=ds.variables['ice_conc'][:,:]
-                        SIC_raw=ds.variables['raw_ice_conc_values'][:,:]
-                        SIC[SIC_raw.mask==False]=SIC_raw[SIC_raw.mask==False]
-                        xgrid=ds.variables['xc'][:]
-                        ygrid=ds.variables['yc'][:]
-                    else:
-                        SIC=ds.variables['SIC_sample'][:,:]
-                        if data=='noise' and calc_mean_noise: SIC_noise=ds.variables['noise'][:,:]
-                    if data=='CCI' and comp_cci_ens:total_err=ds.variables['total_standard_error'][:,:]
-                    status_tmp=ds.variables['status_flag'][:,:]
-                    #smear_err=ds.variables['smearing_standard_error'][:,:]
-                    #alg_err=ds.variables['algorithm_standard_error'][:,:]
-                    #tempz=ds.variable([])
-                    if regional:
-                        lon=ds.variables['lon'][:,:]
-                        lat=ds.variables['lat'][:,:]
-
-                    ds.close()
-
-                    SICs.append(SIC[0,:,:])
-                    if not np.issubdtype(status_tmp.dtype, np.integer):
-                        status_tmp=np.asarray(status_tmp, dtype=int)
-                    status.append(status_tmp[0,:,:])
-                    if data=='CCI' and comp_cci_ens:total_err[total_err.mask]=0.
-                    if data=='CCI' and comp_cci_ens:SIC_sigts.append(total_err[0,:,:])
-                    if data=='noise' and calc_mean_noise:
-                        SIC_noise.mask=SIC.mask
-                        SIC_noises.append(SIC_noise[0,:,:])
-                    #smear_err[smear_err.mask]=0.
-                    #smd_SICs.append(smear_err[0,SIC_mask==0])
-
-                    SICs_date.append(datetime(year, month, dom))
-
-                else: print('No file for: '+str(year)+datestr)
-
-    SICs=np.asarray(SICs)
-    if data=='CCI' and comp_cci_ens:SIC_sigts=np.asarray(SIC_sigts)
-    if data=='noise' and calc_mean_noise:
-        SIC_noises=np.asarray(SIC_noises)
-        SICs_mask=SIC_noises==-32767
-        SIC_noises=np.ma.array(SIC_noises, mask=SICs_mask)
-        #meanNoise15=np.asarray(meanNoise15)
-    SICs_date=np.asarray(SICs_date)
-    status=np.asarray(status)
-
-    SICs_mask=SICs==-32767
-    SICs=np.ma.array(SICs, mask=SICs_mask)
-    if data=='CCI' and comp_cci_ens:SIC_sigts=np.ma.array(SIC_sigts, mask=SICs_mask)
-
-    if comp_cci_ens:#run with CCI first, then noise
-        if data=='CCI':
-            CCI_15=np.array(SICs>15, dtype='bool')
-            noise_15diff=np.zeros_like(CCI_15, dtype='int')
-            SIC_cci=SICs
-            SIA_cci=np.sum(np.sum(SIC_cci, axis=1), axis=1)*dx*dx/100.
-            SIE_cci=np.sum(np.sum(SIC_cci>15., axis=1), axis=1)*dx*dx
-            #SIC_sigts_cci=SIC_sigts
-        elif data=='CCI_filt':
-            filt_15=np.array(SICs>15, dtype='bool')
-            NoiseFilt_15diff=np.zeros_like(filt_15, dtype='int')
-            SIC_filt=SICs
-            SIA_filt=np.sum(np.sum(SIC_filt, axis=1), axis=1)*dx*dx/100.
-            SIE_filt=np.sum(np.sum(SIC_filt>15., axis=1), axis=1)*dx*dx
+for i_batch in np.arange(1, n_batch+1):
+    for i_noise in np.arange(n_noise):
+        #for nc_dir in paths:#loop over n Samples if NOISE
+        if sampledirs:
+            nc_dir=paths[0]+'/batch{:03d}i{:03d}/'.format(i_batch, i_noise)
         else:
-            noise_15diff=noise_15diff + np.array(np.array(SICs>15, dtype='bool')!=CCI_15, dtype='int')
-            NoiseFilt_15diff=NoiseFilt_15diff + np.array(np.array(SICs>15, dtype='bool')!=filt_15, dtype='int')
+            nc_dir=paths[0]
 
-    #%%% SIA/SIE
-    dateyear=np.zeros(len(SICs_date), dtype=int)
-    datemonth=np.zeros(len(SICs_date), dtype=int)
-    dateweek=np.zeros(len(SICs_date), dtype=int)
-    dateweekday=np.zeros(len(SICs_date), dtype=int)
-    dateordinal=np.zeros(len(SICs_date), dtype=int)
-    datedom=np.zeros(len(SICs_date), dtype=int)
-    for i in range(len(SICs_date)):
-        dateyear[i]=SICs_date[i].year
-        datemonth[i]=SICs_date[i].year*100+SICs_date[i].month
-        dateweek[i]=SICs_date[i].year*100+int(SICs_date[i].strftime("%W") )
-        dateweekday[i]=SICs_date[i].weekday()
-        dateordinal[i]=SICs_date[i].toordinal()
-        datedom[i]=SICs_date[i].day
+        print('Folder: '+nc_dir)
 
-    if regional:
-        #            Region  Sea_ID
-        #0   Central_Arctic     1.0
-        #1         Beaufort     2.0
-        #2       Chukchi-NA     3.0
-        #3     Chukchi-Asia     3.0
-        #4       E_Siberian     4.0
-        #5           Laptev     5.0
-        #6             Kara     6.0
-        #7          Barents     7.0
-        #8      E_Greenland     8.0
-        #9           Baffin     9.0
-        #10         St_Lawr    10.0
-        #11          Hudson    11.0
-        #12        Can_Arch    12.0
-        #13       Bering-NA    13.0
-        #14     Bering-Asia    13.0
-        #15         Okhotsk    14.0
-        #16           Japan    15.0
-        #17           Bohai    16.0
-        #18          Baltic    17.0
-        #19     Gulf_Alaska    18.0
-        reg_ds=geopandas.read_file(regions_file)
-        polyid=np.zeros_like(lon,dtype=int).flatten()-1
-        #an array holding the index of the ic poligon at each pm location
-        for i in reg_ds.index:
-            inpolyi=shapely.vectorized.contains(reg_ds.geometry[i], lon.flatten() , lat.flatten())
-            if np.sum(polyid[inpolyi]!=-1)>=1:
-                warnings.warn(str(np.sum(polyid[inpolyi]!=-1))+' locations in multipe regions', UserWarning)
-            polyid[inpolyi]=reg_ds['Sea_ID'][i]
-        polyid=polyid.reshape(np.shape(lon))
-        polyid.mask=polyid==-1
-    timeaxweek=[]
-    timeaxmonth=[]
-    #for year in
-    for week in np.unique(dateweek):
-        #timeaxweek.append(SICs_date[dateweek==week][0]+timedelta(3))
-        if 3 in dateweekday[dateweek==week]:
-            timeaxweek.append(SICs_date[dateweek==week][dateweekday[dateweek==week]==3][0])
-    for month in np.unique(datemonth):
-        timeaxmonth.append(SICs_date[datemonth==month][0]+timedelta(15))
+        #read data
+
+        SICs=[]
+        if data=='CCI' and comp_cci_ens: SIC_sigts=[]
+        SICs_date=[]
+        status=[]
+        SIC_noises=[]
+
+        for year in years:
+            print(year)
+            for month in months:#
+                fns=os.listdir(nc_dir+'{:04d}/{:02d}/'.format(year,month))
+                dim=calendar.monthrange(year, month)[1]
+                for dom in range(1,dim+1):
+
+                    datestr='{:02d}{:02d}'.format(month, dom)
+                    #print(datestr)
+                    if data=='noise':
+                        fns=list(filter(lambda x : 'NOISE_batch{:03d}i{:03d}'.format(i_batch,i_noise) in x, fns))#list with up to one sample in it
+                    fn=list(filter(lambda x : filterhandle+'{:}{:}'.format(year,datestr) in x, fns))#list with up to one finename in it
+                    #SICs=[]
+                    #SICs_year=[]
+                    #d_SICs=[]
+                    #smd_SICs=[]
+                    #ald_SICs=[]
 
 
+                        #print(nc_dir+'{:04d}/{:02d}/'.format(year,month)+fileex+str(year)+datestr+'-fv2.1.nc')
 
-    SIA_tmp=np.sum(np.sum(SICs, axis=1), axis=1)*dx*dx/100.
-    SIE_tmp=np.sum(np.sum(SICs>15., axis=1), axis=1)*dx*dx
-    SIAs_day.append(SIA_tmp)
-    SIEs_day.append(SIE_tmp)
-    SIAs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
-    SIEs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
-    for iweek in range(len(np.unique(dateweek))):
-        SIAs_week_tmp.mask[iweek]=False
-        SIEs_week_tmp.mask[iweek]=False
-        SIAs_week_tmp[iweek]=np.mean(SIA_tmp[dateweek==np.unique(dateweek)[iweek]])
-        SIEs_week_tmp[iweek]=np.mean(SIE_tmp[dateweek==np.unique(dateweek)[iweek]])
-        #dateweek
-    SIAs_week.append(SIAs_week_tmp[SIAs_week_tmp.mask==0])
-    SIEs_week.append(SIEs_week_tmp[SIAs_week_tmp.mask==0])
-    SIA_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
-    SIE_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
-    for imonth in range(len(np.unique(datemonth))):
-        SIA_month_tmp.mask[imonth]=False
-        SIE_month_tmp.mask[imonth]=False
-        SIA_month_tmp[imonth]=np.mean(SIA_tmp[datemonth==np.unique(datemonth)[imonth]])
-        SIE_month_tmp[imonth]=np.mean(SIE_tmp[datemonth==np.unique(datemonth)[imonth]])
-    SIAs_month.append(SIA_month_tmp[SIA_month_tmp.mask==0])
-    SIEs_month.append(SIE_month_tmp[SIE_month_tmp.mask==0])
+                    if len(fn)==1:
 
-    if data=='noise' and calc_mean_noise:
-        meanNoise.append(np.mean(np.mean(SIC_noises, axis=1),axis=1))
-        if comp_cci_ens:
-            meanNoise15.append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_cci[x]>10, SIC_cci[x]<20)]) for x in range(len(SIC_noises))]))
-            meanNoise15_filt.append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_filt[x]>10, SIC_filt[x]<20)]) for x in range(len(SIC_noises))]))
-        #meanNoise15.append(np.mean(np.mean(SIC_noises[np.logical_and(SIC>10, SIC<20)], axis=1),axis=1))
+                        ds=nc.Dataset(nc_dir+'{:04d}/{:02d}/'.format(year,month)+fn[0], "r")
+                        #print(ds.variables)
+                        if data=='CCI':#original
+                            SIC=ds.variables['ice_conc'][:,:]
+                            SIC_raw=ds.variables['raw_ice_conc_values'][:,:]
+                            SIC[SIC_raw.mask==False]=SIC_raw[SIC_raw.mask==False]
+                            xgrid=ds.variables['xc'][:]
+                            ygrid=ds.variables['yc'][:]
+                        else:
+                            SIC=ds.variables['SIC_sample'][:,:]
+                            if data=='noise' and calc_mean_noise: SIC_noise=ds.variables['noise'][:,:]
+                        if data=='CCI' and comp_cci_ens:total_err=ds.variables['total_standard_error'][:,:]
+                        status_tmp=ds.variables['status_flag'][:,:]
+                        #print((status_tmp[0]))
+                        #dfgh
+                        #smear_err=ds.variables['smearing_standard_error'][:,:]
+                        #alg_err=ds.variables['algorithm_standard_error'][:,:]
+                        #tempz=ds.variable([])
+                        if regional:
+                            lon=ds.variables['lon'][:,:]
+                            lat=ds.variables['lat'][:,:]
 
-    if regional:
-        for sea_id in sea_ids:
-            SIA_tmp=np.sum(SICs[:,polyid==sea_id], axis=1)*dx*dx/100.
-            SIE_tmp=np.sum(SICs[:,polyid==sea_id]>15., axis=1)*dx*dx
+                        ds.close()
 
-            SIAs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
-            SIEs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
-            for iweek in range(len(np.unique(dateweek))):
-                SIAs_week_tmp.mask[iweek]=False
-                SIEs_week_tmp.mask[iweek]=False
-                SIAs_week_tmp[iweek]=np.mean(SIA_tmp[dateweek==np.unique(dateweek)[iweek]])
-                SIEs_week_tmp[iweek]=np.mean(SIE_tmp[dateweek==np.unique(dateweek)[iweek]])
-                #dateweek
-            SIA_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
-            SIE_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
-            for imonth in range(len(np.unique(datemonth))):
-                SIA_month_tmp.mask[imonth]=False
-                SIE_month_tmp.mask[imonth]=False
-                SIA_month_tmp[imonth]=np.mean(SIA_tmp[datemonth==np.unique(datemonth)[imonth]])
-                SIE_month_tmp[imonth]=np.mean(SIE_tmp[datemonth==np.unique(datemonth)[imonth]])
+                        SICs.append(SIC[0,:,:])
+                        if not np.issubdtype(status_tmp.dtype, np.integer):
+                            status_tmp=np.asarray(status_tmp, dtype=int)
+                        status.append(status_tmp[0,:,:])
+                        if data=='CCI' and comp_cci_ens:total_err[total_err.mask]=0.
+                        if data=='CCI' and comp_cci_ens:SIC_sigts.append(total_err[0,:,:])
+                        if data=='noise' and calc_mean_noise:
+                            SIC_noise.mask=SIC.mask
+                            SIC_noises.append(SIC_noise[0,:,:])
+                        #smear_err[smear_err.mask]=0.
+                        #smd_SICs.append(smear_err[0,SIC_mask==0])
 
-            SIAsreg_day[str(sea_id)].append(SIA_tmp)
-            SIEsreg_day[str(sea_id)].append(SIE_tmp)
-            SIAsreg_week[str(sea_id)].append(SIAs_week_tmp[SIAs_week_tmp.mask==0])
-            SIEsreg_week[str(sea_id)].append(SIEs_week_tmp[SIAs_week_tmp.mask==0])
-            SIAsreg_month[str(sea_id)].append(SIA_month_tmp[SIA_month_tmp.mask==0])
-            SIEsreg_month[str(sea_id)].append(SIE_month_tmp[SIE_month_tmp.mask==0])
-            if data=='noise' and calc_mean_noise:
-                meanNoisereg[str(sea_id)].append(np.mean(np.mean(SIC_noises, axis=1),axis=1))
-                if comp_cci_ens:
-                    meanNoise15reg[str(sea_id)].append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_cci[x]>10, SIC_cci[x]<20)]) for x in range(len(SIC_noises))]))
-                    meanNoise15reg_filt[str(sea_id)].append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_filt[x]>10, SIC_filt[x]<20)]) for x in range(len(SIC_noises))]))
-                #meanNoise15.append(np.mean(np.mean(SIC_noises[np.logical_and(SIC>10, SIC<20)], axis=1),axis=1))
+                        SICs_date.append(datetime(year, month, dom))
+
+                    else: print('No file for: '+str(year)+datestr)
+
+        SICs=np.asarray(SICs)
+        if data=='CCI' and comp_cci_ens:SIC_sigts=np.asarray(SIC_sigts)
+        if data=='noise' and calc_mean_noise:
+            SIC_noises=np.asarray(SIC_noises)
+            SICs_mask=SIC_noises==-32767
+            SIC_noises=np.ma.array(SIC_noises, mask=SICs_mask)
+            #meanNoise15=np.asarray(meanNoise15)
+        SICs_date=np.asarray(SICs_date)
+        status=np.asarray(status)
+
+        SICs_mask=SICs==-32767
+        SICs=np.ma.array(SICs, mask=SICs_mask)
+        if data=='CCI' and comp_cci_ens:SIC_sigts=np.ma.array(SIC_sigts, mask=SICs_mask)
+
+        if comp_cci_ens:#run with CCI first, then noise
+            if data=='CCI':
+                CCI_15=np.array(SICs>15, dtype='bool')
+                noise_15diff=np.zeros_like(CCI_15, dtype='int')
+                SIC_cci=SICs
+                SIA_cci=np.sum(np.sum(SIC_cci, axis=1), axis=1)*dx*dx/100.
+                SIE_cci=np.sum(np.sum(SIC_cci>15., axis=1), axis=1)*dx*dx
+                #SIC_sigts_cci=SIC_sigts
+            elif data=='CCI_filt':
+                filt_15=np.array(SICs>15, dtype='bool')
+                NoiseFilt_15diff=np.zeros_like(filt_15, dtype='int')
+                SIC_filt=SICs
+                SIA_filt=np.sum(np.sum(SIC_filt, axis=1), axis=1)*dx*dx/100.
+                SIE_filt=np.sum(np.sum(SIC_filt>15., axis=1), axis=1)*dx*dx
+            else:
+                noise_15diff=noise_15diff + np.array(np.array(SICs>15, dtype='bool')!=CCI_15, dtype='int')
+                NoiseFilt_15diff=NoiseFilt_15diff + np.array(np.array(SICs>15, dtype='bool')!=filt_15, dtype='int')
+
+        #%%% SIA/SIE
+        dateyear=np.zeros(len(SICs_date), dtype=int)
+        datemonth=np.zeros(len(SICs_date), dtype=int)
+        dateweek=np.zeros(len(SICs_date), dtype=int)
+        dateweekday=np.zeros(len(SICs_date), dtype=int)
+        dateordinal=np.zeros(len(SICs_date), dtype=int)
+        datedom=np.zeros(len(SICs_date), dtype=int)
+        for i in range(len(SICs_date)):
+            dateyear[i]=SICs_date[i].year
+            datemonth[i]=SICs_date[i].year*100+SICs_date[i].month
+            dateweek[i]=SICs_date[i].year*100+int(SICs_date[i].strftime("%W") )
+            dateweekday[i]=SICs_date[i].weekday()
+            dateordinal[i]=SICs_date[i].toordinal()
+            datedom[i]=SICs_date[i].day
+
+        if regional:
+            #            Region  Sea_ID
+            #0   Central_Arctic     1.0
+            #1         Beaufort     2.0
+            #2       Chukchi-NA     3.0
+            #3     Chukchi-Asia     3.0
+            #4       E_Siberian     4.0
+            #5           Laptev     5.0
+            #6             Kara     6.0
+            #7          Barents     7.0
+            #8      E_Greenland     8.0
+            #9           Baffin     9.0
+            #10         St_Lawr    10.0
+            #11          Hudson    11.0
+            #12        Can_Arch    12.0
+            #13       Bering-NA    13.0
+            #14     Bering-Asia    13.0
+            #15         Okhotsk    14.0
+            #16           Japan    15.0
+            #17           Bohai    16.0
+            #18          Baltic    17.0
+            #19     Gulf_Alaska    18.0
+            reg_ds=geopandas.read_file(regions_file)
+            polyid=np.zeros_like(lon,dtype=int).flatten()-1
+            #an array holding the index of the ic poligon at each pm location
+            for i in reg_ds.index:
+                inpolyi=shapely.vectorized.contains(reg_ds.geometry[i], lon.flatten() , lat.flatten())
+                if np.sum(polyid[inpolyi]!=-1)>=1:
+                    warnings.warn(str(np.sum(polyid[inpolyi]!=-1))+' locations in multipe regions', UserWarning)
+                polyid[inpolyi]=reg_ds['Sea_ID'][i]
+            polyid=polyid.reshape(np.shape(lon))
+            polyid.mask=polyid==-1
+        timeaxweek=[]
+        timeaxmonth=[]
+        #for year in
+        for week in np.unique(dateweek):
+            #timeaxweek.append(SICs_date[dateweek==week][0]+timedelta(3))
+            if 3 in dateweekday[dateweek==week]:
+                timeaxweek.append(SICs_date[dateweek==week][dateweekday[dateweek==week]==3][0])
+        for month in np.unique(datemonth):
+            timeaxmonth.append(SICs_date[datemonth==month][0]+timedelta(15))
+
+
+        if sic_owf_zero:
+                SICs[(status & 4)==4]=0.
+
+        SIA_tmp=np.sum(np.sum(SICs, axis=1), axis=1)*dx*dx/100.
+        SIE_tmp=np.sum(np.sum(SICs>15., axis=1), axis=1)*dx*dx
+
+        SIAs_day.append(SIA_tmp)
+        SIEs_day.append(SIE_tmp)
+        SIAs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
+        SIEs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
+        for iweek in range(len(np.unique(dateweek))):
+            SIAs_week_tmp.mask[iweek]=False
+            SIEs_week_tmp.mask[iweek]=False
+            SIAs_week_tmp[iweek]=np.mean(SIA_tmp[dateweek==np.unique(dateweek)[iweek]])
+            SIEs_week_tmp[iweek]=np.mean(SIE_tmp[dateweek==np.unique(dateweek)[iweek]])
+            #dateweek
+        SIAs_week.append(SIAs_week_tmp[SIAs_week_tmp.mask==0])
+        SIEs_week.append(SIEs_week_tmp[SIAs_week_tmp.mask==0])
+        SIA_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
+        SIE_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
+        for imonth in range(len(np.unique(datemonth))):
+            SIA_month_tmp.mask[imonth]=False
+            SIE_month_tmp.mask[imonth]=False
+            SIA_month_tmp[imonth]=np.mean(SIA_tmp[datemonth==np.unique(datemonth)[imonth]])
+            SIE_month_tmp[imonth]=np.mean(SIE_tmp[datemonth==np.unique(datemonth)[imonth]])
+        SIAs_month.append(SIA_month_tmp[SIA_month_tmp.mask==0])
+        SIEs_month.append(SIE_month_tmp[SIE_month_tmp.mask==0])
+
+        if data=='noise' and calc_mean_noise:
+            meanNoise.append(np.mean(np.mean(SIC_noises, axis=1),axis=1))
+            if comp_cci_ens:
+                meanNoise15.append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_cci[x]>10, SIC_cci[x]<20)]) for x in range(len(SIC_noises))]))
+                meanNoise15_filt.append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_filt[x]>10, SIC_filt[x]<20)]) for x in range(len(SIC_noises))]))
+            #meanNoise15.append(np.mean(np.mean(SIC_noises[np.logical_and(SIC>10, SIC<20)], axis=1),axis=1))
+
+        if regional:
+            for sea_id in sea_ids:
+                SIA_tmp=np.sum(SICs[:,polyid==sea_id], axis=1)*dx*dx/100.
+                SIE_tmp=np.sum(SICs[:,polyid==sea_id]>15., axis=1)*dx*dx
+
+                SIAs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
+                SIEs_week_tmp=np.ma.array(np.zeros(len(np.unique(dateweek))), mask=np.ones(len(np.unique(dateweek))))
+                for iweek in range(len(np.unique(dateweek))):
+                    SIAs_week_tmp.mask[iweek]=False
+                    SIEs_week_tmp.mask[iweek]=False
+                    SIAs_week_tmp[iweek]=np.mean(SIA_tmp[dateweek==np.unique(dateweek)[iweek]])
+                    SIEs_week_tmp[iweek]=np.mean(SIE_tmp[dateweek==np.unique(dateweek)[iweek]])
+                    #dateweek
+                SIA_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
+                SIE_month_tmp=np.ma.array(np.zeros(len(np.unique(datemonth))), mask=np.ones(len(np.unique(datemonth))))
+                for imonth in range(len(np.unique(datemonth))):
+                    SIA_month_tmp.mask[imonth]=False
+                    SIE_month_tmp.mask[imonth]=False
+                    SIA_month_tmp[imonth]=np.mean(SIA_tmp[datemonth==np.unique(datemonth)[imonth]])
+                    SIE_month_tmp[imonth]=np.mean(SIE_tmp[datemonth==np.unique(datemonth)[imonth]])
+
+                SIAsreg_day[str(sea_id)].append(SIA_tmp)
+                SIEsreg_day[str(sea_id)].append(SIE_tmp)
+                SIAsreg_week[str(sea_id)].append(SIAs_week_tmp[SIAs_week_tmp.mask==0])
+                SIEsreg_week[str(sea_id)].append(SIEs_week_tmp[SIAs_week_tmp.mask==0])
+                SIAsreg_month[str(sea_id)].append(SIA_month_tmp[SIA_month_tmp.mask==0])
+                SIEsreg_month[str(sea_id)].append(SIE_month_tmp[SIE_month_tmp.mask==0])
+                if data=='noise' and calc_mean_noise:
+                    meanNoisereg[str(sea_id)].append(np.mean(np.mean(SIC_noises, axis=1),axis=1))
+                    if comp_cci_ens:
+                        meanNoise15reg[str(sea_id)].append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_cci[x]>10, SIC_cci[x]<20)]) for x in range(len(SIC_noises))]))
+                        meanNoise15reg_filt[str(sea_id)].append(np.asarray([np.mean(SIC_noises[x][np.logical_and(SIC_filt[x]>10, SIC_filt[x]<20)]) for x in range(len(SIC_noises))]))
+                    #meanNoise15.append(np.mean(np.mean(SIC_noises[np.logical_and(SIC>10, SIC<20)], axis=1),axis=1))
 
 
 SIAs_day=np.asarray(SIAs_day)
@@ -546,8 +547,8 @@ if 1:
         fig, axes=plt.subplots(nrows=1, ncols=2)#, sharex=True, sharey=True,)
         fig.set_figheight(3)
         fig.set_figwidth(15)
-        axes[0].plot(SICs_date, SIAs_day[:20,:].T/1e6, c='grey', alpha=0.6)
-        axes[0].plot(SICs_date, np.mean(SIAs_day[:20,:], axis=0)/1e6, c='k')
+        axes[0].plot(SICs_date, SIAs_day[:n_noise*n_batch,:].T/1e6, c='grey', alpha=0.6)
+        axes[0].plot(SICs_date, np.mean(SIAs_day[:n_noise*n_batch,:], axis=0)/1e6, c='k')
         axes[0].plot(SICs_date, SIAs_day[0,:]/1e6, c='r')
         #axes[0].set_title('Daily')
         axes[0].set_ylabel(r'SIA [m km$^2$]')
@@ -555,8 +556,8 @@ if 1:
         axes[0].set_xticks(ticks)
         axes[0].set_xticklabels(['{:04d}-{:02d}'.format(x.year, x.month) for x in ticks])
 
-        axes[1].plot(SICs_date, SIEs_day[:20,:].T/1e6, c='grey', alpha=0.6)
-        axes[1].plot(SICs_date, np.mean(SIEs_day[:20,:], axis=0)/1e6, c='k')
+        axes[1].plot(SICs_date, SIEs_day[:n_noise*n_batch,:].T/1e6, c='grey', alpha=0.6)
+        axes[1].plot(SICs_date, np.mean(SIEs_day[:n_noise*n_batch,:], axis=0)/1e6, c='k')
         axes[1].plot(SICs_date, SIEs_day[0,:].T/1e6, c='r')
         axes[1].set_ylabel(r'SIE [m km$^2$]')
         axes[1].set_xlim([SICs_date[0], SICs_date[-1]])
@@ -571,7 +572,7 @@ if 1:
         fig, axes=plt.subplots(nrows=1, ncols=2)#,(2, sharex=True, sharey=True)
         fig.set_figheight(3)
         fig.set_figwidth(15)
-        axes[0].plot(SICs_date, (SIAs_day[:20,:]/1e6-SIA_day_mean).T, c='grey', alpha=0.6)
+        axes[0].plot(SICs_date, (SIAs_day[:n_noise*n_batch,:]/1e6-SIA_day_mean).T, c='grey', alpha=0.6)
         #axes[0].plot(SICs_date, SIA_day_mean, c='k')
         axes[0].plot(SICs_date, SIAs_day[0,:]/1e6-SIA_day_mean, c='r')
         #axes[0].set_title('Daily')
@@ -581,7 +582,7 @@ if 1:
         axes[0].set_xticklabels(['{:04d}-{:02d}'.format(x.year, x.month) for x in ticks])
 
         SIE_day_mean = np.mean(SIEs_day, axis=0)/1e6
-        axes[1].plot(SICs_date, (SIEs_day[:20,:]/1e6-SIE_day_mean).T, c='grey', alpha=0.6)
+        axes[1].plot(SICs_date, (SIEs_day[:n_noise*n_batch,:]/1e6-SIE_day_mean).T, c='grey', alpha=0.6)
         #axes[1].plot(SICs_date, np.mean(SIEs_day[:20,:], axis=0)/1e6, c='k')
         axes[1].plot(SICs_date, SIEs_day[0,:].T/1e6-SIE_day_mean, c='r')
         axes[1].set_ylabel(r'SIE Anomaly [m km$^2$]')
@@ -686,7 +687,7 @@ if 1:
 
         else: #not full year = trends
             fig, axes=plt.subplots(2, sharex=True, sharey=True)
-            for i in range(20):
+            for i in range(n_noise*n_batch):
                 axes[0].scatter(SICs_date, SIAs_day[i,:]/1e6, c='grey', alpha=0.4)
                 res=stats.linregress(dayord, SIAs_day[i,:])
                 axes[0].plot(SICs_date, (res.intercept+res.slope*dayord)/1e6, 'grey', alpha=0.4)
@@ -699,7 +700,7 @@ if 1:
             #axes[0].set_xlim([SICs_date[0], SICs_date[-1]])
             #axes[0].set_xticks(ticks)
 
-            for i in range(20):
+            for i in range(n_noise*n_batch):
                 axes[1].scatter(SICs_date, SIEs_day[i,:]/1e6, c='grey', alpha=0.4)
                 res=stats.linregress(dayord, SIEs_day[i,:])
                 axes[1].plot(SICs_date, (res.intercept+res.slope*dayord)/1e6, 'grey', alpha=0.4)
@@ -716,7 +717,7 @@ if 1:
 
             fig, ax=plt.subplots(1, sharex=True, sharey=True)
             axes=[ax]
-            for i in range(20):#n_noise
+            for i in range(n_noise*n_batch):#n_noise
                 if i==0:
                     axes[0].scatter(timeaxmonth, SIAs_month[i,:]/1e6, c='grey', alpha=0.4, label='Ensemble')
                 else:
@@ -738,7 +739,7 @@ if 1:
             fig, ax=plt.subplots(1)
             axes=[ax]
             x_axis_tmp=np.array([timeaxmonth[i].year for i in range(len(timeaxmonth))])
-            for i in range(20):#n_noise
+            for i in range(n_noise*n_batch):#n_noise
                 res=stats.linregress(monthord, SIAs_month[i,:])
                 axes[0].plot(x_axis_tmp, (res.intercept+res.slope*monthord)/1e6, 'grey', alpha=0.4)
             axes[0].boxplot(SIAs_month[:,:]/1e6, positions=x_axis_tmp)#
@@ -757,7 +758,7 @@ if 1:
             #plt.savefig('/home/dusch/Dropbox/Documents/manuscripts/SIA_data/first_draft/figures/'+'trend_NH09_box.png', dpi=300)
 
             if 0:
-                for i in range(20):
+                for i in range(n_noise*n_batch):
                     if i==0:
                         axes[1].scatter(timeaxmonth, SIEs_month[i,:]/1e6, c='grey', alpha=0.4, label='Ensemble')
                     else:
@@ -781,8 +782,12 @@ if 1:
         print('SIA Uncertainty [m km²] {:.3f} (daily) {:.3f} (weekly); {:.3f} (monthly)'.format(np.mean(np.std(SIAs_day, axis=0)/1e6), np.mean(np.std(SIAs_week, axis=0)/1e6), np.mean(np.std(SIAs_month, axis=0)/1e6)))
         print('SIE Uncertainty [m km²] {:.3f} (daily) {:.3f} (weekly); {:.3f} (monthly)'.format(np.mean(np.std(SIEs_day, axis=0)/1e6), np.mean(np.std(SIEs_week, axis=0)/1e6), np.mean(np.std(SIEs_month, axis=0)/1e6)))
 
-        print('SIA Uncertainty [m km²] before 1988 {:.3f} (daily), {:.3f} (monthly)'.format(np.mean(np.std(SIAs_day, axis=0)[dateyear<1988]/1e6), np.mean(np.std(SIAs_month, axis=0)[:9]/1e6)))
-        print('SIE Uncertainty [m km²] before 1988 {:.3f} (daily), {:.3f} (monthly)'.format(np.mean(np.std(SIEs_day, axis=0)[dateyear<1988]/1e6), np.mean(np.std(SIEs_month, axis=0)[:9]/1e6)))
+        print('SIA [m km²] {:.3f} (daily)'.format(np.mean(SIAs_day)/1e6))
+        print('SIE [m km²] {:.3f} (daily)'.format((np.mean(SIEs_day)/1e6)))
+
+
+        print('September SIA Uncertainty [m km²] before 1988 {:.3f} (daily), {:.3f} (monthly)'.format(np.mean(np.std(SIAs_day, axis=0)[dateyear<1988]/1e6), np.mean(np.std(SIAs_month, axis=0)[:9]/1e6)))
+        print('September SIE Uncertainty [m km²] before 1988 {:.3f} (daily), {:.3f} (monthly)'.format(np.mean(np.std(SIEs_day, axis=0)[dateyear<1988]/1e6), np.mean(np.std(SIEs_month, axis=0)[:9]/1e6)))
 
 if 1:
         slopemon=[]
@@ -954,22 +959,6 @@ if 0:#combine all SIE in one graph
     axes[1].set_ylabel(r'SIE [m km$^2$]')
     axes[1].set_xlabel('Time')
     axes[1].legend()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
