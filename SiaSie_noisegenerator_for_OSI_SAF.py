@@ -41,88 +41,6 @@ import json
 #from matplotlib import cm
 
 
-
-#read(date, read_dir, data_version, dx, hem)
-def read_SIC_old(interval, years, months, read_dir, data_version, dx, hem, day='all'):
-    if interval=='day' and day=='all':
-        raise ValueError('provide a day (as day of the month) for single day processing')
-    if interval=='month' and day!='all':
-        raise Warning('You provide a day of the month, even though the processing is using the whole month')
-
-    if hem=='north':
-        xh='nh'
-    elif hem=='south':
-        xh='sh'
-
-    if 1:
-        #dx=25.
-        #v3p0_
-        #version='3.0'
-        #nc_dir='/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/'#.format(XH,dx)
-        fileex='ice_conc_{}_ease2-{:02.0f}0_cdr-{}_'.format(xh,dx, data_version)#20160101-fv2.1.nc
-        fileex2='1200.nc'
-
-    #if data_source=='SICCI2':
-    #    dx=50.
-    #    version='2.1'
-    #    nc_dir='/media/dusch/T7 Shield/SIC/SIC/{}{:02.0f}/'.format(XH,dx)
-    #    fileex='ESACCI-SEAICE-L4-SICONC-AMSR_{:02.1f}kmEASE2-{}-'.format(dx,XH)#20160101-fv2.1.nc
-    #    fileex2='-fv2.1.nc'
-
-
-    #such as can be found here: http://dx.doi.org/10.5285/5f75fcb0c58740d99b07953797bc041e
-    #and is documented (a.o.) here: https://climate.esa.int/en/projects/sea-ice/about/
-    print('Reading year(s) {} to {} and month(s) {} to {}'.format(years[0], years[-1], months[0], months[-1]))
-    SICs=[]
-    SIC_sigts=[]
-    SICs_date=[]
-    status=[]
-    for year in years:
-        for month in months:#
-            dim=calendar.monthrange(year, month)[1]
-            if interval=='day': doms=dataday
-            elif interval=='month': doms=range(1,dim+1)#day of month-s
-            for dom in doms:
-                datestr='{:02d}{:02d}'.format(month, dom)
-                #print(datestr)
-
-                try:
-                    ds=nc.Dataset(read_dir+'{:04d}/{:02d}/'.format(year,month)+fileex+str(year)+datestr+fileex2, "r")
-                    #print(ds.variables)
-                    SIC=ds.variables['ice_conc'][:,:]
-                    SIC_raw=ds.variables['raw_ice_conc_values'][:,:]
-                    SIC[SIC_raw.mask==False]=SIC_raw[SIC_raw.mask==False]
-                    try: total_err=ds.variables['total_standard_error'][:,:]
-                    except: total_err=ds.variables['total_standard_uncertainty'][:,:]
-                    status_tmp=ds.variables['status_flag'][:,:]
-                    lon=ds.variables['lon'][:,:]
-                    lat=ds.variables['lat'][:,:]
-                    ds.close()
-
-                    SICs.append(SIC[0,:,:])
-                    status.append(status_tmp[0,:,:])
-                    total_err[total_err.mask]=0.
-                    SIC_sigts.append(total_err[0,:,:])
-
-
-                    SICs_date.append(datetime(year, month, dom))
-
-                except: print('No file for: '+str(year)+datestr)
-            print('Processed '+str(year)+datestr)
-    SICs=np.asarray(SICs)
-    SIC_sigts=np.asarray(SIC_sigts)
-    SICs_date=np.asarray(SICs_date)
-    status=np.asarray(status)
-
-    SICs_mask=SICs<-100
-    SICs=np.ma.array(SICs, mask=SICs_mask)
-    SIC_sigts=np.ma.array(SIC_sigts, mask=SICs_mask)
-
-    return lon, lat, SICs_date, status, SICs, SIC_sigts
-
-
-
-
 def find_sic_files(first_day, last_day, area, sources, fn_patt, fn_patt_src):
     files = []
     srcs = []
@@ -243,7 +161,7 @@ def read_SIC(interval, years, months, read_dir, data_version, dx, hem, day='all'
     SICs[raw_100_mask] = SIC_raw[raw_100_mask]
     #SICs[SIC_raw.mask==False]=SIC_raw[SIC_raw.mask==False]
     SICs[(status & 4) == 4] = SIC_raw[(status & 4) == 4]
-    #rtfgrg
+
 
     SICs_date=np.zeros_like(SICs_date_seconds, dtype=date)
     for i in range(len(SICs_date_seconds)):
@@ -414,7 +332,6 @@ def save_daily(daily_savedir, data, batch_number, i, l_scales, dx, hem, data_ver
     days=np.unique(timeps.index.day)
 
     #print(data['dates'])
-    print(timeps.index[0])
 
     dateordinal=np.zeros(len(SICs_date), dtype=int)
     for in_sic_date in range(len(SICs_date)):
@@ -450,15 +367,14 @@ def save_daily(daily_savedir, data, batch_number, i, l_scales, dx, hem, data_ver
                         print('WARNING: No data for {:04d}-{:02d}-{:02d}'.format(dt_opjekt.year, dt_opjekt.month, dt_opjekt.day))#warnings.warn
                 else:
                     fn='NOISE_{}_lx{:.0f}km_lt{:.0f}d_ice_conc_{}_ease2-{:02.0f}0_cdr-{}_{:04d}{:02d}{:02d}1200.nc'.format(id_noise, l_scales[1]*dx, l_scales[0], xh, dx, data_version, year, month, day)
-                    #fn='NOISE_{}_lx{:.0f}km_lt{:.0f}d_ice_conc_cdr-{}_{:02.1f}km_ease2-{}-{:04d}{:02d}{:02d}.nc'.format(id_noise, l_scales[1]*dx, l_scales[0], data_version, dx, hem, year, month, day)
-                    print(fn)
-                    ncds = nc.Dataset(savedir_tmp+fn, 'w', format='NETCDF4')
+                    #print(fn)
+                    ncds = nc.Dataset(savedir_tmp+fn, 'w', format='NETCDF4_CLASSIC')
                     ncds.description = 'Noisy realisation of OSI SAF SIC data version {} with {:02.1f}km nominal resolution, {} hemisphere -{:04d}{:02d}{:02d}-fv2.1.nc file, accessable from https://climate.esa.int/en/odp/#/project/sea-ice'.format(data_version, dx, hem, year, month, day)
 
                     dimt, dimy, dimx = np.shape(data['sic_with_err'])
                     timeunits='days since 1900-01-01 00:00:00'
                     # dimensions
-                    ncds.createDimension('time', 1)
+                    ncds.createDimension('time', None)
                     ncds.createDimension('x', dimx)
                     ncds.createDimension('y', dimy)
 
@@ -485,14 +401,14 @@ def save_daily(daily_savedir, data, batch_number, i, l_scales, dx, hem, data_ver
                         lat_var[:,:] = data['lat'][:,:]
 
                     if 'sic_with_err' in variables:
-                        sic_var = ncds.createVariable('SIC_sample', 'f8', ('time','x','y',), fill_value=-32767)
+                        sic_var = ncds.createVariable('SIC_sample', 'f4', ('time','x','y',), fill_value=-32767)
                         sic_var.setncatts({'long_name':u"Sea Ice Concentration sample, combining CCI signal and noise realisation. Not truncated to [0,100]"})
                         sic_var.setncatts({'units': u"% SIC"})
                         #sic_var.setncatts({'scale_factor': u"1.0"})
                         sic_var[:,:,:] = data['sic_with_err'].filled(fill_value=-32767.)[i_time[0],:,:].reshape([1,dimx,dimy])[:,:,:]
 
                     if 'stat' in variables:
-                        status_var = ncds.createVariable('status_flag', 'u1', ('time','x','y',))
+                        status_var = ncds.createVariable('status_flag', 'i4', ('time','x','y',))
                         status_var.setncatts({'long_name':u"status flag bit array for sea ice concentration retrievals"})
                         status_var.setncatts({'standard_name':u"sea_ice_area_fraction status_flag"})
                         status_var.setncatts({'flag_masks': u"[  1   2   4   8  16  32  64 128]"})
@@ -507,16 +423,16 @@ def save_daily(daily_savedir, data, batch_number, i, l_scales, dx, hem, data_ver
                                                   bit 6 (flag 32): Value is the result of spatial interpolation
                                                   bit 7 (flag 64): Value is the result of temporal interpolation
                                                   bit 8 (flag 128): SIC is set to zero since position is outside maximum sea ice climatology."""})
-                        status_var[:,:,:] = data['stat'][i_time[0],:,:]
+                        status_var[:,:,:] = data['stat'][i_time[0],:,:].reshape([1,dimx,dimy])[:,:,:]
 
                     if 'noise' in variables:
-                        noise_var = ncds.createVariable('noise', 'f8', ('time','x','y',), fill_value=-32767)
+                        noise_var = ncds.createVariable('noise', 'f4', ('time','x','y',), fill_value=-32767)
                         noise_var.setncatts({'long_name':u"Sea Ice Concentration noise field, scaled by CCI total uncertainty but excluding the average SIC"})
                         noise_var.setncatts({'units': u"% SIC"})
                         noise_var[:,:,:] = data['noise'].filled(fill_value=-32767.)[i_time[0],:,:].reshape([1,dimy,dimx])[:,:,:]
 
                     if 'dates' in variables:
-                        sic_date_var = ncds.createVariable('time', 'f4', ('time'))
+                        sic_date_var = ncds.createVariable('time', 'i4', ('time'))
                         sic_date_var.setncatts({'units': timeunits})
                         sic_date_var[:] = nc.date2num(SICs_date[i_time[0]], timeunits)
 
@@ -561,15 +477,26 @@ def fill_unc_interpolation(SICs, SIC_sigts, SIC_algunc, SIC_smearunc, status):
 
     return SIC_sigts_new, SIC_algunc_new, SIC_smearunc_new
 
-def create_ensemble(year, month, n_noise, read_dir, save_dir, hem, interval, lcor_temp, lcor_sp_km, data_version, day='all', dx=25, batch_number=1, fill_unc=True, sampledirs=True):
+def create_ensemble(year, month, n_noise, read_dir, save_dir, hem, interval, lcor_temp, lcor_sp_km, data_version, day='all', dx=25, batch_number=1, fill_unc=True, sampledirs=True, apply_weather_filter=True):
     data={}
     if hem=='north':
         ref_crs=ccrs.NorthPolarStereo()
     elif hem=='south':
         ref_crs=ccrs.SouthPolarStereo()
 
-
+    print('Reading {}-{}'.format(year, month))
     lon, lat, SICs_date, status, SICs, SIC_sigts, SIC_algunc, SIC_smearunc = read_SIC(interval, year, month, read_dir, data_version, dx, hem, day=day)
+
+    if 0:
+        plt.figure()
+        plt.hist(SICs[(status & 4)==4], bins=40)
+        plt.figure()
+        plt.hist(SIC_sigts[(status & 4)==4], bins=40)
+        print('Mean: {}'.format(np.mean(SIC_sigts[(status & 4)==4])))
+        print('Max: {}'.format(np.max(SIC_sigts[(status & 4)==4])))
+        print('n>10: {}'.format(np.sum(SIC_sigts[(status & 4)==4]>10.)))
+        print('shape: {}'.format(np.shape(SIC_sigts)))
+
 
     if fill_unc:
         SIC_sigts, SIC_algunc, SIC_smearunc = fill_unc_interpolation(SICs, SIC_sigts, SIC_algunc, SIC_smearunc, status)
@@ -589,7 +516,8 @@ def create_ensemble(year, month, n_noise, read_dir, save_dir, hem, interval, lco
     data['stat']=status
 
     SICs_low=rednoise(np.shape(SICs), l_scales, useasfilter=True, data=SICs)
-
+    if apply_weather_filter:#Read out the raw SIC for weather filter and set mean to 0 now. Otherwise the smoothing increases SIC again
+        SICs_low[(status & 4)==4]=0.
 
     #fignoise, axnoise=plt.subplots()
     for i in range(n_noise):
@@ -610,7 +538,7 @@ def create_ensemble_from_file(input_file)  :
     if 'batch_number' not in par.keys(): par['batch_number']=1
     if 'fill_unc' not in par.keys(): par['fill_unc']=True
     if 'sampledirs' not in par.keys(): par['sampledirs']=True
-
+    if 'apply_weather_filter' not in par.keys(): par['apply_weather_filter']=True
     create_ensemble(
             year=par['year'],
             month=par['month'],
@@ -626,7 +554,8 @@ def create_ensemble_from_file(input_file)  :
             dx=par['dx'],
             batch_number=par['batch_number'],
             fill_unc=par['fill_unc'],
-            sampledirs=par['sampledirs'])
+            sampledirs=par['sampledirs'],
+            apply_weather_filter=par['apply_weather_filter'])
 
 
 if __name__ == "__main__":
@@ -644,7 +573,7 @@ if __name__ == "__main__":
         data_version="v3p0"
         #version of the input data files
 
-        hem="south"
+        hem="north"
         #hemisphere
 
         dx=25
@@ -653,8 +582,11 @@ if __name__ == "__main__":
         interval="month"
         #is a day or a month (or more) being processed? if =='day': a dataday is required
         years= [1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+        #years= [2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+        #years=[2015]
         #year(s) to process, typically you would give only one at a time (see below)
-        month= [2]
+        #months= np.arange(1,13)
+        months=[9]
         #month to process, typically you would give only one at a time (see below)
         dataday="all"
         #month to process, only needed for intervall=='day'
@@ -662,14 +594,15 @@ if __name__ == "__main__":
         #just a number which is added to the output file names (and directory if sampledirs==True) to avoid overriding earlier ones
         n_noise=20
         #number of samples created by this call. Naming will from 0 to n_noise-1
-        save_dir="/media/dusch/T7 Shield/SIC/noise/daily/SH/osi_sep_full/"
+        save_dir="/media/dusch/T7 Shield/SIC/noise/daily/osi_v3/"
         #location where to save samples to
         lcor_temp = 5.0
         lcor_sp_km= 288.0
         #spatial and themporal correlation parameters. Typically not to be changed.
         sampledirs=True
         #Decide whether each sample gets its only directory in save_dir (called /batchxxxixxx/) or all samples in the same directory, being differenciated only by their names.
-
+        #apply_weather_filter=True
+        #this is default now
 
         #create_ensemble() (and create_ensemble_from_file() can handle periods>one month, but will try to generate the full sample from the first day to the last day at once (where input data is available).
         #This is not practical for periods > one year and unnecessary if there are gaps >> lcor_temp anyways.
@@ -679,7 +612,8 @@ if __name__ == "__main__":
 
         #Note that, in particular SIE, is non-linear, therefore the mean of the SIE ensemble will not be the same of the SIE of the mean SIC (=SIC product). Therefore do NOT use mean(SIE(ensemble)) +/- std(SIE(ensemble)) but instead DO use SIE(SIC_450a) +/- std(SIE(ensemble))
         for year in years:
-            create_ensemble([year], month, n_noise, read_dir, save_dir, hem, interval, lcor_temp, lcor_sp_km, data_version, day=dataday, dx=25, batch_number=1, sampledirs=sampledirs)
+            for month in months:
+                create_ensemble([year], [month], n_noise, read_dir, save_dir, hem, interval, lcor_temp, lcor_sp_km, data_version, day=dataday, dx=25, batch_number=batch_number, sampledirs=sampledirs)
 
     else:
         #same as above but using a file instead of parameter definition in script.
@@ -691,15 +625,6 @@ if __name__ == "__main__":
         #dt1=datetime.now()
 
         #print(dt1-dt0)
-
-
-
-
-
-
-
-
-
 
 
 
