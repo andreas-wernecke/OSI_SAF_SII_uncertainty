@@ -51,9 +51,9 @@ def find_sic_files(first_day, last_day, area, sources, fn_patt, fn_patt_src):
         # find the path/url to the file. There are precedence rules for what type of files
         #   to select.
         found_one_file = False
-        for cdr in ('cdr', 'icdr', 'icdrft'):
+        for cdr in ('cdr_patch','cdr', 'icdr', 'icdrft'):#,#looking for versions of files in this order
             fn = fn_patt.format(a=area, d=d, c=fn_patt_src[cdr])
-            fn = os.path.join(sources[cdr],'{:%Y/%m/}'.format(d),fn)
+            fn = os.path.join(sources[cdr].format(y=d.year, m=d.month),fn)
             #print(fn)
             try:
                 # this url exists, append it and move to next date
@@ -62,7 +62,7 @@ def find_sic_files(first_day, last_day, area, sources, fn_patt, fn_patt_src):
                     found_one_file = True
                     files.append(fn)
                     srcs.append(cdr)
-                continue
+                break#use only one file per date
             except OSError:
                 # no valid file at this url, check the next rule
                 pass
@@ -114,15 +114,17 @@ def read_SIC(interval, years, months, read_dir, data_version, dx, hem, day='all'
 
     # input daily SIC files
     fn_patt = 'ice_conc_{a:}_ease2-250_{c:}_{d:%Y%m%d}1200.nc'
-    fn_patt_src = {'cdr': 'cdr-{}'.format(data_version), 'icdr': 'icdr-{}'.format(data_version), 'icdrft': 'icdrft-{}'.format(data_version)}
+    fn_patt_src = {'cdr_patch':'cdr-{}-patch'.format(data_version), 'cdr': 'cdr-{}'.format(data_version), 'icdr': 'icdr-{}'.format(data_version), 'icdrft': 'icdrft-{}'.format(data_version)}
+
 
     if indirs is None:
         # access through THREDDS/OpenDAP
         sources = {#'cdr':'https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_450a_files/',
                   #'cdr':'https://thredds.met.no/thredds/catalog/osisaf/met.no/reprocessed/ice/conc_450a_files/',
-                  'cdr' : read_dir[0],
-                  'icdr' : read_dir[1],
-                  'icdrft' : read_dir[2],
+                  'cdr_patch' : read_dir[0],
+                  'cdr' : read_dir[1],
+                  'icdr' : read_dir[2],
+                  'icdrft' : read_dir[3],
                   #'icdr':'https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_cra_files/',
                   #'icdr':'https://thredds.met.no/thredds/catalog/osisaf/met.no/reprocessed/ice/conc_cra_files/',
                   #'icdrft':'https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_cra_files/'
@@ -565,9 +567,10 @@ if __name__ == "__main__":
         #read_dir= ['https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_450a_files/',
         #           'https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_450a_files/',
         #           "https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_cra_files/"]
-        read_dir= ["/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/",
-                     "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/",
-                     "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/"]
+        read_dir= ["/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30_patch/v3p0-patch/",
+                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:}/{m:}/",
+                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:}/{m:}/",
+                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:}/{m:}/"]
         #Wher do we find the data? The first is searched for 'cdr', second for 'icdr', third for 'icdrft' files
 
         data_version="v3p0"
@@ -581,7 +584,7 @@ if __name__ == "__main__":
 
         interval="month"
         #is a day or a month (or more) being processed? if =='day': a dataday is required
-        years= [1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
+        years= [1979, 1980, 1981, 1982, 1983, 1984, 1985, 1986, 1987, 1988, 1989, 1990, 1991, 1992, 1993, 1994, 1995, 1996, 1997, 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
         #years= [2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
         #years=[2015]
         #year(s) to process, typically you would give only one at a time (see below)
