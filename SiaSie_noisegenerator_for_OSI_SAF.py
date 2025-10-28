@@ -30,7 +30,8 @@ import cartopy.crs as ccrs
 #import cartopy.feature as cf
 import matplotlib.pyplot as plt
 
-from datetime import date, datetime, timedelta#, time
+from datetime import date, datetime, timedelta
+import time as timemodule
 from dateutil import rrule#, relativedelta
 #import uuid
 
@@ -141,7 +142,11 @@ def read_SIC(interval, years, months, read_dir, data_version, dx, hem, day='all'
 
     files, srcs = find_sic_files(first_day, last_day, area, sources=sources, fn_patt=fn_patt, fn_patt_src=fn_patt_src)
     #ds = xr.open_mfdataset(files,)
-
+    if len(files)==0:
+        success=False
+        print('File list between beginnig {}-{} to end of {}-{} is empty, proceeding'.format(years[0], months[0], years[-1], months[-1]))
+        return [], [], [], [], [], [], [], [], success
+        
     with nc.MFDataset(files,) as ds:
         SIC_trunc=ds.variables['ice_conc'][:,:]
         SIC_raw=ds.variables['raw_ice_conc_values'][:,:]
@@ -163,15 +168,17 @@ def read_SIC(interval, years, months, read_dir, data_version, dx, hem, day='all'
     SICs[raw_100_mask] = SIC_raw[raw_100_mask]
     #SICs[SIC_raw.mask==False]=SIC_raw[SIC_raw.mask==False]
     SICs[(status & 4) == 4] = SIC_raw[(status & 4) == 4]
-
+    #catch chrazy small raw sics at 12+13March2024
+    SICs[SICs<-1e3]=SIC_trunc[SICs<-1e3]
 
     SICs_date=np.zeros_like(SICs_date_seconds, dtype=date)
     for i in range(len(SICs_date_seconds)):
         SICs_date[i]=SICs_date_t0+timedelta(seconds=SICs_date_seconds[i])
-
+        
+    success=True
     #total_err[total_err.mask]=0.#??
 
-    return lon, lat, SICs_date, status, SICs, total_err, alg_err, smear_err
+    return lon, lat, SICs_date, status, SICs, total_err, alg_err, smear_err, success
 
 #ds = xr.open_mfdataset(files,)
 
@@ -468,10 +475,9 @@ def fill_unc_interpolation(SICs, SIC_sigts, SIC_algunc, SIC_smearunc, status):
         plt.hist(SIC_sigts_new[inpol_mask])
 
     if abs(np.sum(SIC_sigts_new.mask) - np.sum(SIC_sigts.mask)) != np.sum(inpol_mask):
-        print(np.sum(SIC_sigts_new.mask))
-        print(np.sum(SIC_sigts.mask))
-        print(np.sum(inpol_mask))
-        print('We either did not fill all interpolated uncertainties, overdid it somehow')#raise Warning(
+        print('Number of filled SIC unc: {}'.format(abs(np.sum(SIC_sigts_new.mask) - np.sum(SIC_sigts.mask))))
+        print('Number of locations with either temporal or spatial interpolation according to flag: {}'.format(np.sum(inpol_mask)))
+        print('We either did not fill all interpolated uncertainties, or overdid it somehow')#raise Warning(
     if np.min(SIC_sigts_new)<0. or np.min(SIC_algunc_new)<0. or np.min(SIC_smearunc_new)<0.:
         raise Warning('Nope')
     if np.isnan(SIC_sigts_new).any() or np.isnan(SIC_algunc_new).any() or np.isnan(SIC_smearunc_new).any():
@@ -487,8 +493,10 @@ def create_ensemble(year, month, n_noise, read_dir, save_dir, hem, interval, lco
         ref_crs=ccrs.SouthPolarStereo()
 
     print('Reading {}-{}'.format(year, month))
-    lon, lat, SICs_date, status, SICs, SIC_sigts, SIC_algunc, SIC_smearunc = read_SIC(interval, year, month, read_dir, data_version, dx, hem, day=day)
-
+    lon, lat, SICs_date, status, SICs, SIC_sigts, SIC_algunc, SIC_smearunc, success = read_SIC(interval, year, month, read_dir, data_version, dx, hem, day=day)
+    if not success:
+        return
+        
     if 0:
         plt.figure()
         plt.hist(SICs[(status & 4)==4], bins=40)
@@ -568,15 +576,15 @@ if __name__ == "__main__":
         #           'https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_450a_files/',
         #           "https://thredds.met.no/thredds/dodsC/osisaf/met.no/reprocessed/ice/conc_cra_files/"]
         read_dir= ["/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30_patch/v3p0-patch/",
-                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:}/{m:}/",
-                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:}/{m:}/",
-                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:}/{m:}/"]
+                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:04d}/{m:02d}/",
+                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:04d}/{m:02d}/",
+                   "/media/dusch/T7 Shield/SIC/SIC/OSI_CDR/SICv30/{y:04d}/{m:02d}/"]
         #Wher do we find the data? The first is searched for 'cdr', second for 'icdr', third for 'icdrft' files
 
         data_version="v3p0"
         #version of the input data files
 
-        hem="north"
+        #hem="north"
         #hemisphere
 
         dx=25
@@ -588,14 +596,14 @@ if __name__ == "__main__":
         #years= [2010, 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024]
         #years=[2015]
         #year(s) to process, typically you would give only one at a time (see below)
-        #months= np.arange(1,13)
-        months=[9]
+        months= np.arange(1,13)
+        #months=[9]
         #month to process, typically you would give only one at a time (see below)
         dataday="all"
         #month to process, only needed for intervall=='day'
         batch_number=1
         #just a number which is added to the output file names (and directory if sampledirs==True) to avoid overriding earlier ones
-        n_noise=20
+        n_noise=50
         #number of samples created by this call. Naming will from 0 to n_noise-1
         save_dir="/media/dusch/T7 Shield/SIC/noise/daily/osi_v3/"
         #location where to save samples to
@@ -616,7 +624,8 @@ if __name__ == "__main__":
         #Note that, in particular SIE, is non-linear, therefore the mean of the SIE ensemble will not be the same of the SIE of the mean SIC (=SIC product). Therefore do NOT use mean(SIE(ensemble)) +/- std(SIE(ensemble)) but instead DO use SIE(SIC_450a) +/- std(SIE(ensemble))
         for year in years:
             for month in months:
-                create_ensemble([year], [month], n_noise, read_dir, save_dir, hem, interval, lcor_temp, lcor_sp_km, data_version, day=dataday, dx=25, batch_number=batch_number, sampledirs=sampledirs)
+                create_ensemble([year], [month], n_noise, read_dir, save_dir, "north", interval, lcor_temp, lcor_sp_km, data_version, day=dataday, dx=25, batch_number=batch_number, sampledirs=sampledirs)
+                create_ensemble([year], [month], n_noise, read_dir, save_dir, "south", interval, lcor_temp, lcor_sp_km, data_version, day=dataday, dx=25, batch_number=batch_number, sampledirs=sampledirs)
 
     else:
         #same as above but using a file instead of parameter definition in script.
