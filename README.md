@@ -1,0 +1,1 @@
+Code to read in OSI SAF CDR / ICDR SIC files and generate SIC MC ensemble mebers (noisegenerator). Then read in MC files to derive SIA and save files (noiseanalyse; load=0, save=1), and lastly load SIA files and analyse+plot data together with UHH SIA (noiseanalyse; load=1, data_SIAUHH=1). Plotting is split to reduce figures, if not current focus.
